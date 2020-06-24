@@ -1,0 +1,712 @@
+---
+title: "Data Preprocessing_ANLY506"
+author: "Bhuvaneshwari Meganathan"
+date: "5/26/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readr)
+library(Hmisc)
+library(dplyr)
+library(tidyverse)
+library(cluster)
+library(factoextra)
+library(ggplot2)
+library(ggthemes)
+library(devtools)
+library(usethis)
+
+```
+
+#Reading data & summary    
+
+```{r}
+#Reading data
+proj_data <- read_csv("G:/506/Project/Project DataSet1.csv")
+View(proj_data)
+
+#Summary of data
+str(proj_data)
+summary(proj_data)
+glimpse(proj_data)
+
+```
+
+### /* ********************** Start of pre-analysis ******************************* */
+
+```{r}
+
+
+proj_data %>% count(gsub('[%]*[0-9]*',"",page),sort = TRUE)
+proj_data %>% count(channel,sort = TRUE)
+proj_data %>% count(company_name,sort = TRUE)
+proj_data %>% count(job_views,sort = TRUE)
+proj_data %>% count(job_apply_clicks,sort = TRUE)
+proj_data %>% count(job_apply_success,sort = TRUE)
+
+channl_job_suc <- proj_data %>% count(channel,job_apply_success,sort = TRUE)
+#SEO job_apply_success
+channl_job_suc[channl_job_suc$n < 12,]
+
+rcorr(as.matrix(proj_data[sapply(proj_data,is.numeric)]),type = "pearson")
+
+#boxplot(proj_data)
+#cor(proj_data[sapply(proj_data,is.numeric)])
+#is.numeric(proj_data[])
+
+# Missing Value check
+
+sapply(proj_data,function(x) sum(is.na(x)))
+
+# We see missing values in 'Page', 'article_name', 'company_name'
+
+# head(proj_data[is.na(proj_data$page),])
+
+
+
+```
+
+
+#Data Cleaning    
+
+```{r}
+
+# Remove article_name and company_name
+
+proj_dat_cleaned <- proj_data[c(1:5,7,9:11)]
+
+# filter only the page types "advice","profiles","jobs","NA","companies","tags","coaching","coaches","user"
+
+page_type <- c("advice","profiles","jobs","NA","companies","tags","coaching","coaches","user")
+proj_dat_cleaned <- (proj_dat_cleaned[proj_dat_cleaned$page %in% page_type,])
+
+# Changing Page field to factor
+proj_dat_cleaned$page = as.factor(proj_dat_cleaned$page)
+
+#converting date into date format
+proj_dat_cleaned$date = as.Date(proj_dat_cleaned$date)
+
+
+capFirst <- function(s) {
+  paste(toupper(substring(s, 1, 1)), substring(s, 2), sep = "")
+}
+
+proj_dat_cleaned$page <- capFirst(proj_dat_cleaned$page)
+proj_dat_cleaned$channel <- capFirst(proj_dat_cleaned$channel)
+
+
+#proj_dat_cleaned$weekday_page <- paste(weekdays(proj_dat_cleaned$date, abbreviate = TRUE),"-",proj_dat_cleaned$page)
+#proj_dat_cleaned$weekday_channel <- paste(weekdays(proj_dat_cleaned$date, abbreviate = TRUE),"-",proj_dat_cleaned$channel)
+#proj_dat_cln_grp -> proj_dat_cleaned %>% group_by(weekday_page)
+#boxplot(proj_dat_cleaned[2:4])
+
+
+```
+
+The company_name is left as a factor for efficiency. It can be converted into character as needed.   
+The columns: uv, sessions, page_views, job_views, job_apply_clicks, job_apply_success are already in "int" format. But if we were to convert all of them into numeric at once, we can follow the below steps:   
+
+
+
+
+#Sessions by Page
+```{r}
+options(scipen = 999)
+
+proj_dat_cleaned %>%
+  group_by(page) %>%
+  summarise(sessions = sum(sessions))%>%
+  ggplot(aes(reorder(page,-sessions),sessions, fill = page))+
+  geom_bar(stat = "identity", width = 0.3) +
+  geom_text(aes(label = format(sessions,big.mark = ','),vjust=0))+
+scale_y_continuous(labels = scales::comma)+
+  labs(title = "Sessions by Page",
+       x = "Page",
+       y= "Sessions",
+       fill = "Page") + theme_economist()+
+  theme(plot.title = element_text(hjust = 0.5) ) + scale_fill_economist()
+  
+  
+```
+
+#Sessions by Channel
+```{r}
+options(scipen = 999)
+
+proj_dat_cleaned %>%
+  group_by(channel) %>%
+  summarise(sessions = sum(sessions))%>%
+  ggplot(aes(reorder(channel,sessions),sessions, fill = channel))+
+  geom_bar(stat = "identity", width = 0.3) +
+  geom_text(aes(label = format(sessions,big.mark = ','),hjust=0.35))+
+scale_y_continuous(labels = scales::comma)+
+  labs(title = "Sessions by Channel",
+       x = "Channel",
+       y= "Sessions",
+       fill = "Channel") + theme_gdocs()+
+  theme(plot.title = element_text(hjust = 0.5) ) + 
+  scale_fill_discrete() + coord_flip()
+  
+  
+```
+
+#Sessions by day per channel
+```{r}
+options(scipen = 999)
+
+# Sessions by Day per channel
+proj_dat_cleaned %>%
+  group_by(date,channel) %>%
+  summarise(sessions = sum(sessions))%>%
+  ggplot(aes(x =as.Date(date), y =sessions, color = channel))+
+  geom_line() + facet_wrap(~channel, scales = "free")+
+  geom_smooth(method = "lm")+
+  scale_y_continuous(labels = scales::comma)+
+  labs(title = "Sessions by Day",
+       x = "Date",
+       y= "Sessions",
+       fill = "Channel") + theme_solarized()+
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(face="bold", color="#993333", 
+                                   size=8, angle=30)) + 
+  scale_fill_discrete()
+
+# Sessions by Day
+proj_dat_cleaned %>%
+  group_by(date) %>%
+  summarise(sessions = sum(sessions))%>%
+  ggplot(aes(x =as.Date(date), y =sessions))+
+  geom_line( color = "steel blue")+
+  geom_smooth(method = "lm")+
+scale_y_continuous(labels = scales::comma)+
+  labs(title = "Sessions by Day",
+       x = "Date",
+       y= "Sessions") + theme_solarized()+
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(face="bold", color="#993333", 
+                                   size=8, angle=30)) + 
+  scale_fill_discrete()
+
+```
+#Uv's by Channel
+```{r}
+options(scipen = 999)
+
+proj_dat_cleaned %>%
+  group_by(channel) %>%
+  summarise(UV = sum(uv))%>%
+  ggplot(aes(reorder(channel,UV),UV, fill = channel))+
+  geom_bar(stat = "identity", width = 0.3) +
+  geom_text(aes(label = format(UV,big.mark = ','),vjust=0))+
+scale_y_continuous(labels = scales::comma)+
+  labs(title = "Unique Visitors by Channel",
+       x = "Channel",
+       y= "Unique Visitors",
+       fill = "Channel") + theme_gdocs()+
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position = "None") + 
+  scale_fill_discrete() + coord_flip()
+  
+  
+```
+
+#Uv's by Page
+```{r}
+options(scipen = 999)
+
+proj_dat_cleaned %>%
+  group_by(page) %>%
+  summarise(UV = sum(uv))%>%
+  ggplot(aes(reorder(page,-UV),UV, fill = page))+
+  geom_bar(stat = "identity", width = 0.3) +
+  geom_text(aes(label = format(UV,big.mark = ','),vjust=0, hjust = -0.00001))+
+  scale_y_continuous(labels = scales::comma)+
+  labs(title = "Unique Visitors by Page",
+       x = "Page",
+       y= "Unique Visitors",
+       fill = "Page") + theme_economist()+
+  theme(plot.title = element_text(hjust = 0.5) ) + scale_fill_economist()
+  
+  
+```
+#Uv's by day per channel
+```{r}
+options(scipen = 999)
+
+# Uv's by Day per channel
+proj_dat_cleaned %>%
+  group_by(date,channel) %>%
+  summarise(UV = sum(uv))%>%
+  ggplot(aes(x =as.Date(date), y =UV, color = channel))+
+  geom_line() + facet_wrap(~channel, scales = "free")+
+  geom_smooth(method = "lm")+
+  scale_y_continuous(labels = scales::comma)+
+  labs(title = "Unique Visitors by Day",
+       x = "Date",
+       y= "Unique Visitors",
+       fill = "Channel") + theme_solarized()+
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(face="bold", color="#993333", 
+                                   size=8, angle=30)) + 
+  scale_fill_discrete()
+
+# Uv's by Day
+proj_dat_cleaned %>%
+  group_by(date) %>%
+  summarise(UV = sum(uv))%>%
+  ggplot(aes(x =as.Date(date), y =UV))+
+  geom_line( color = "steel blue")+
+  geom_smooth(method = "lm")+
+  scale_y_continuous(labels = scales::comma)+
+  labs(title = "Unique Visitors by Day",
+       x = "Date",
+       y= "Unique Visitors") + theme_solarized()+
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(face="bold", color="#993333", 
+                                   size=8, angle=30)) + 
+  scale_fill_discrete()
+
+```
+
+#Page Views by Channel
+```{r}
+options(scipen = 999)
+
+proj_dat_cleaned %>%
+  group_by(channel) %>%
+  summarise(page_views = sum(page_views))%>%
+  ggplot(aes(reorder(channel,page_views),page_views, fill = channel))+
+  geom_bar(stat = "identity", width = 0.3) +
+  geom_text(aes(label = format(page_views,big.mark = ','),hjust=0.43))+
+  scale_y_continuous(labels = scales::comma)+
+  labs(title = "Page Views by Channel",
+       x = "Channel",
+       y= "Page Views",
+       fill = "Channel") + theme_gdocs()+
+  theme(plot.title = element_text(hjust = 0.5) ) + 
+  scale_fill_discrete() + coord_flip()
+
+```
+
+#Page Views  by day per Channel
+```{r}
+options(scipen = 999)
+
+
+# Page Views by Day
+proj_dat_cleaned %>%
+  group_by(date) %>%
+  summarise(page_views = sum(page_views))%>%
+  ggplot(aes(x =as.Date(date), y =page_views))+
+  geom_line( color = "steel blue")+
+  geom_smooth(method = "lm")+
+  scale_y_continuous(labels = scales::comma)+
+  labs(title = "Page Views by Day",
+       x = "Date",
+       y= "Page Views") + theme_solarized()+
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(face="bold", color="#993333", 
+                                   size=8, angle=30)) + 
+  scale_fill_discrete()
+
+#Page Views by day per channel
+proj_dat_cleaned %>%
+  group_by(date,channel) %>%
+  summarise(page_views = sum(page_views))%>%
+  ggplot(aes(x =as.Date(date), y =page_views, color = channel))+
+  geom_line() + facet_wrap(~channel, scales = "free")+
+  geom_smooth(method = "lm")+
+  scale_y_continuous(labels = scales::comma)+
+  labs(title = "Page Views by Day",
+       x = "Date",
+       y= "Page Views",
+       fill = "Channel") + theme_solarized()+
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(face="bold", color="#993333", 
+                                   size=8, angle=30)) + 
+  scale_fill_discrete()
+
+```
+
+
+#Job Views by Channel
+```{r}
+
+options(scipen = 999)
+proj_dat_cleaned %>%
+  group_by(channel) %>%
+  summarise(job_views = sum(job_views))%>%
+  ggplot(aes(reorder(channel,job_views),job_views, fill = channel))+
+  geom_bar(stat = "identity", width = 0.3) +
+  geom_text(aes(label = format(job_views,big.mark = ','),hjust=0.43))+
+  scale_y_continuous(labels = scales::comma)+
+  labs(title = "Job Views by Channel",
+       x = "Channel",
+       y= "Job Views",
+       fill = "Channel") + theme_gdocs()+
+  theme(plot.title = element_text(hjust = 0.5) ) + 
+  scale_fill_discrete() + coord_flip()
+#+ bbc_style()
+
+# Job Views by Page
+proj_dat_cleaned %>%
+  group_by(page) %>%
+  summarise(job_views = sum(job_views))%>%
+  ggplot(aes(reorder(page,-job_views),job_views, fill = page))+
+  geom_bar(stat = "identity", width = 0.3) +
+  geom_text(aes(label = format(job_views,big.mark = ','),vjust=0))+
+scale_y_continuous(labels = scales::comma)+
+  labs(title = "Job Views by Page",
+       x = "Page",
+       y= "Job Views",
+       fill = "Page") + theme_economist()+
+  theme(plot.title = element_text(hjust = 0.5) ) + scale_fill_economist()
+
+
+
+```
+
+
+#Job Views  by day per Channel
+```{r}
+options(scipen = 999)
+# Page Views by Day
+proj_dat_cleaned %>%
+  group_by(date) %>%
+  summarise(job_views = sum(job_views))%>%
+  ggplot(aes(x =as.Date(date), y =job_views))+
+  geom_line( color = "steel blue")+
+  geom_smooth(method = "lm")+
+  scale_y_continuous(labels = scales::comma)+
+  labs(title = "Job Views by Day",
+       x = "Date",
+       y= "Job Views") + theme_solarized()+
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(face="bold", color="#993333", 
+                                   size=8, angle=30)) + 
+  scale_fill_discrete()
+
+#Page Views by day per channel
+proj_dat_cleaned %>%
+  group_by(date,channel) %>%
+  summarise(job_views = sum(job_views))%>%
+  ggplot(aes(x =as.Date(date), y =job_views, color = channel))+
+  geom_line() + facet_wrap(~channel, scales = "free")+
+  geom_smooth(method = "lm")+
+  scale_y_continuous(labels = scales::comma)+
+  labs(title = "Job Views by Day",
+       x = "Date",
+       y= "Job Views",
+       fill = "Channel") + theme_solarized()+
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(face="bold", color="#993333", 
+                                   size=8, angle=30)) + 
+  scale_fill_discrete()
+
+```
+
+
+#CORRELATION
+```{r}
+# Out of the whole dataset, only these variables will be considered.
+
+variables = c(
+    'uv', 
+    'sessions',
+    'page_views',
+    'job_views',
+    'job_apply_clicks',
+    'job_apply_success'
+  )
+
+proj_dat_cleaned2 <- proj_dat_cleaned[, variables]
+summary(proj_dat_cleaned2)
+
+#Pearson method for a correlation table
+round(cor(proj_dat_cleaned2, use="pairwise.complete.obs", method = "pearson"), 2)
+
+#Price has the highest correlation to availability_365 according to the Pearson table
+
+cor.test(proj_dat_cleaned2$job_views,proj_dat_cleaned2$uv, method = "pearson")
+cor.test(proj_dat_cleaned2$job_views,proj_dat_cleaned2$sessions, method = "pearson")
+cor.test(proj_dat_cleaned2$job_views,proj_dat_cleaned2$page_views, method = "pearson")
+cor.test(proj_dat_cleaned2$job_views,proj_dat_cleaned2$job_apply_clicks, method = "pearson")
+cor.test(proj_dat_cleaned2$job_views,proj_dat_cleaned2$job_apply_success, method = "pearson")
+
+
+#Create Correltation plots for the dataset-
+library(corrplot)
+#cordata only created for corrplot
+cordata = proj_dat_cleaned2
+colnames(cordata) = c("job_views", "uv", "sessions", "page_views", "job_apply_clicks", "job_apply_success")
+corrplot(cor(cordata), method="circle")
+
+
+```
+
+# **************  Scatterplots ***********************
+
+
+```{r}
+
+cleanup = theme(panel.grid.major = element_blank(),
+                panel.grid.minor = element_blank(),
+                panel.background = element_blank(),
+                axis.line.x = element_line(color = 'black'),
+                axis.line.y = element_line(color = 'black'),
+                legend.key = element_rect(fill = 'white'),
+                text = element_text(size = 15))
+
+options(scipen = 999)
+
+par(mfrow=c(2,2))
+
+
+```
+
+
+```{r}
+# Session and Unique vistors
+ggplot(proj_dat_cleaned, aes(uv, sessions)) + geom_point(aes(alpha = 0.2, size=2)) + 
+    guides(alpha=F,size=F) + stat_smooth(method = "lm", level = 0.95, colour = "red") + 
+    labs(title = "Scatterplot of Unique visitors and Session") + 
+    labs(x = "Unique Visitors", y = "Sessions") +
+    theme_economist() + scale_colour_economist()+
+    cleanup
+
+```
+
+
+```{r}
+# uv by Page views grouped by Page type
+
+
+ggplot(proj_dat_cleaned, aes(uv, page_views)) + geom_point(aes(alpha = 0.2, size=2, colour = page)) + 
+    guides(alpha=F,size=F) + stat_smooth(method = "lm", level = 0.95, colour = "red", aes(fill = page)) + 
+    labs(title = "Scatterplot of Unique Visitor and page views by Page ") + 
+    labs(x = "Unique Visitors", y = "Page Views")+
+    cleanup
+
+```
+
+```{r}
+
+# uv by Page views grouped by channel
+
+ggplot(proj_dat_cleaned, aes(uv, page_views)) + geom_point(aes(alpha = 0.2, size=2, colour = channel)) + 
+    guides(alpha=F,size=F) + stat_smooth(method = "lm", level = 0.95, colour = "red") + 
+    labs(title = "Unique Visitors & page views by channel  ") + 
+    labs(x = "Unique Visitors", y = "Page Views")+
+    cleanup
+
+```
+
+
+```{r}
+# uv by Job views
+# Adding channel/page is not useful
+
+ggplot(proj_dat_cleaned, aes(uv, job_views)) + geom_point(aes(alpha = 0.2, size=2)) + 
+    guides(alpha=F,size=F) + stat_smooth(method = "lm", level = 0.95, colour = "red")  + 
+    labs(title = "Scatterplot of Unique visitors and Job views") + 
+    labs(x = "Unique Visitors", y = "Job Views")+
+    cleanup
+
+
+```
+
+
+```{r}
+# Job view and Job apply click by channel
+
+ggplot(proj_dat_cleaned, aes(proj_dat_cleaned$job_views, proj_dat_cleaned$job_apply_clicks)) + geom_point(aes(colour = channel)) + 
+    guides(alpha=F,size=F) + stat_smooth(method = "lm", level = 0.95, colour = "red")  + 
+    labs(title = "Job views and Job apply click by Channel") + 
+    labs(x = "Job Views", y = "Job apply Click")+
+    cleanup
+
+
+```
+
+```{r}
+# Job view and Job apply click by Page type
+ggplot(proj_dat_cleaned, aes(proj_dat_cleaned$job_views, proj_dat_cleaned$job_apply_clicks)) + geom_point(aes(colour = page)) + 
+    guides(alpha=F,size=F) + stat_smooth(method = "lm", level = 0.95, colour = "red")  + 
+    labs(title = "Job views and Job apply click by Page") + 
+    labs(x = "Job Views", y = "Job apply Click")+
+    cleanup
+
+```
+
+```{r}
+#  Job apply click and job application success by channel
+ggplot(proj_dat_cleaned, aes(proj_dat_cleaned$job_apply_clicks, proj_dat_cleaned$job_apply_success)) + geom_point(aes(colour = channel)) + 
+    guides(alpha=F,size=F) + stat_smooth(method = "lm", level = 0.95, colour = "red")  + 
+    labs(title = "Job apply click & Job Apply success ") + 
+    labs(x = "Job Apply Click", y = "Job Apply Success")+
+    cleanup
+
+```
+
+
+```{r}
+#  Job apply click and job application success by Page type
+ggplot(proj_dat_cleaned, aes(proj_dat_cleaned$job_apply_clicks, proj_dat_cleaned$job_apply_success)) + geom_point(aes(colour = page)) + 
+    guides(alpha=F,size=F) + stat_smooth(method = "lm", level = 0.95, colour = "red")  + 
+    labs(title = "Job Apply clicks & Job apply Success by Page") + 
+    labs(x = "Job Apply click", y = "Job Apply Success")+
+    scale_fill_discrete() +
+    cleanup
+
+```
+
+```{r}
+
+
+ggplot(proj_dat_cleaned, aes(proj_dat_cleaned$job_apply_clicks, proj_dat_cleaned$job_apply_success, fill=proj_dat_cleaned$page)) + 
+geom_boxplot()
+
+
+m1 = lm(PRICE ~ SQFT, data = all_col)
+summary(m1)
+
+
+boxplot(proj_dat_cleaned$job_apply_clicks ~ proj_dat_cleaned$company_name, proj_dat_cleaned, xlab = "Company", ylab = "Job Apply Click")
+
+ggplot(proj_dat_cleaned, aes(x=proj_dat_cleaned$page, y= proj_dat_cleaned$job_views)) + 
+  geom_boxplot(outlier.colour="blue", outlier.size=4)
+
+
+```
+
+
+# Treat Outliers for unique visitors before scaling	
+
+
+```{r}
+
+# Unique visitors below 1.5*IQR to be replaced by 5 percentile and unique visitors above 1.5*IQR to be replaced by 95 percentile
+
+qnt <- quantile(proj_dat_cleaned$uv, probs=c(.25, .75), na.rm = T)
+caps <- quantile(proj_dat_cleaned$uv, probs=c(.05, .95), na.rm = T)
+H <- 1.5 * IQR(proj_dat_cleaned$uv, na.rm = T)
+proj_dat_cleaned$uv[proj_dat_cleaned$uv < (qnt[1] - H)] <- caps[1]
+proj_dat_cleaned$uv[proj_dat_cleaned$uv > (qnt[2] + H)] <- caps[2]
+
+```
+
+
+
+# /* **** k-means clustering (By Page and Channel on unique visitors and job views) ****** */
+
+```{r}
+
+
+# Group data set on page and summarize on unique visitors and job views on mean
+proj_dat_cln_grp_pg <- as.data.frame(proj_dat_cleaned %>%
+  group_by(page) %>%
+  summarise_at(vars(uv,job_views), funs(mean(., na.rm=TRUE))))
+
+# Group data set on channel and summarize on unique visitors and job views on mean
+proj_dat_cln_grp_chnl <- as.data.frame(proj_dat_cleaned %>%
+  group_by(channel) %>%
+  summarise_at(vars(uv,job_views), funs(mean(., na.rm=TRUE))))
+
+# Make page and channel as rownames in respective dataset
+rownames(proj_dat_cln_grp_pg) <- proj_dat_cln_grp_pg$page
+rownames(proj_dat_cln_grp_chnl) <- proj_dat_cln_grp_chnl$channel
+proj_dat_cln_grp_chnl <- proj_dat_cln_grp_chnl[2:3]
+proj_dat_cln_grp_pg <- proj_dat_cln_grp_pg[2:3]
+
+# scale dataset to standardize values for unique visitors and job views
+k_clus_proj_dat <- scale(proj_dat_cln_grp_pg)
+k_clus_proj_dat_chnl <- scale(proj_dat_cln_grp_chnl)
+
+#distance <- get_dist(k_clus_proj_dat)
+#fviz_dist(distance, gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
+#distance
+
+
+#	Clusters for dataset grouped by page
+
+set.seed(080620)
+
+wss <- function(k) {
+  kmeans(proj_dat_cln_grp_pg, k, nstart = 25 )$tot.withinss
+}
+# Compute and plot wss for k = 1 to k = 7
+k.values <- 1:7
+wss_values <- map_dbl(k.values, wss)
+plot(k.values, wss_values,
+     type="b", pch = 19, frame = FALSE, 
+     xlab="Number of clusters K",
+     ylab="Total within-clusters sum of squares")
+
+k3 <- kmeans(proj_dat_cln_grp_pg, centers = 3, nstart = 25)
+k3
+fviz_cluster(k3, data = proj_dat_cln_grp_pg)
+
+
+# Clusters for dataset grouped by channel 
+
+set.seed(070620)
+
+wss_chnl <- function(k) {
+  kmeans(proj_dat_cln_grp_chnl, k, nstart = 25 )$tot.withinss
+}
+
+# Compute and plot wss for k = 1 to k = 15
+k.values_chnl <- 1:15
+
+wss_values_chnl <- map_dbl(k.values_chnl, wss_chnl)
+
+plot(k.values_chnl, wss_values_chnl,
+     type="b", pch = 19, frame = FALSE, 
+     xlab="Number of clusters K",
+     ylab="Total within-clusters sum of squares")
+
+k3_chnl <- kmeans(proj_dat_cln_grp_chnl, centers = 3, nstart = 25)
+k3_chnl
+fviz_cluster(k3_chnl, data = proj_dat_cln_grp_chnl)
+
+
+```
+
+
+# Linear Model
+```{r}
+
+Model1  = lm(job_views~uv,data = proj_dat_cleaned)
+summary(Model1)
+summary(Model1)$adj.r.squared
+
+Model2 <- lm(job_views~uv+ sessions,data = proj_dat_cleaned)
+summary(Model2)
+summary(Model2)$adj.r.squared
+
+Model3 <- lm(job_views~uv+ sessions+ page_views,data = proj_dat_cleaned)
+summary(Model3)
+summary(Model3)$adj.r.squared
+
+Model4 <- lm(job_views~uv+ sessions+ page_views+ job_apply_clicks,data = proj_dat_cleaned)
+summary(Model4)
+summary(Model4)$adj.r.squared
+
+Model5  = lm(job_views~ uv+ sessions+ page_views + job_apply_clicks+ job_apply_success,data = proj_dat_cleaned)
+summary(Model5)
+summary(Model5)$adj.r.squared
+
+#To test for Multicollinearity
+summary(Model5, correlation = T)
+
+# Individual pair-wise correlation is an indicator of multicollinearity. The correlation coeff of the  variables shows that each variables are not highly correlated as the value is not close to 1.
+# Also multicollinearity exist when there is very high R squared ie more than 0.90 and coefficients are not significant according to their p-values. In our model R squared is 0.09, F statistic is significant 9468 and   p value is less than 0.05. The individual p value for most of the variables is significant. Hence there is no multicollinearity
+
+#Comparing the models
+anova(Model1, Model2, Model3, Model4, Model5) 
+
+#Looking at the adj R squared Model4 provides an increase in the adj R squard value and is significant. Model 4 is the best model
+
+```
