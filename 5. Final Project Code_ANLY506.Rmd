@@ -1,6 +1,6 @@
 ---
 title: "Data Preprocessing_ANLY506"
-author: "Akash Verma"
+author: "Bhuvaneshwari Meganathan"
 date: "5/26/2020"
 output:
   word_document: default
